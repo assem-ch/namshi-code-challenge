@@ -1,80 +1,128 @@
+const {createMySqlConnection} = require("./helpers");
 
 
-import {createMySqlConnection, createMySqlPool} from "./mysql";
+async function createTransaction(req, res, next) {
+    const from = req.body.from;
+    const to = req.body.to;
+    const amount = req.body.amount;
 
-async function createBalance(req, res, next){
+    if (!from || !to) {
+        return res.status(400).json({
+            "success": false,
+            "error": "You should define the 2 sides of transaction via *to* and *from*"
+        })
+    }
+
+    if (from === to) {
+        return res.status(403).json({
+            "success": false,
+            "error": "Transaction from and to the same person is forbidden"
+        })
+    }
 
 
-    const connection = await createMySqlConnection()
+    if (!amount || amount < 0) {
+        return res.status(400).json({"success": false, "error": "You should define amount as positive non-zero value"})
+    }
 
-    let result =  await connection.query('INSERT INTO balances VALUES ()',[])
+    // TODO prevent duplicate requests
+    const connection = await createMySqlConnection();
 
-    console.log(result)
-    return res.status(200).json({ "id": result[0].insertId})
+    try {
+
+        await connection.beginTransaction();
+
+        let [[sourceBalance]] = await connection.execute('Select account_nr, balance FROM balances WHERE account_nr = ? FOR UPDATE', [from]);
+        let [[destBalance]] = await connection.execute('Select account_nr, balance FROM balances WHERE account_nr = ? FOR UPDATE', [to]);
+
+        if (!sourceBalance || !destBalance) {
+            await connection.rollback();
+            return res.status(404).json({
+                "success": false,
+                "error": "Source or Destination is not a valid bank account"
+            })
+        }
+
+        if (sourceBalance.balance < amount) {
+            await connection.rollback();
+            return res.status(403).json({"success": false, "error": "Source balance has not the complete amount"})
+        }
+
+        await connection.execute('UPDATE balances SET balance = balance - ?  WHERE account_nr = ?', [amount, from]);
+        await connection.execute('UPDATE balances SET balance = balance + ?  WHERE account_nr = ?', [amount, to]);
+        await connection.execute('INSERT INTO transactions (amount, account_nr) VALUES ( ?, ?)', [amount, from]);
+        await connection.execute('INSERT INTO transactions (amount, account_nr) VALUES ( ?, ?)', [amount, to]);
+        await connection.commit();
+
+        return res.status(200).json({"success": true})
+
+    } catch (err) {
+        await connection.rollback();
+        return res.status(500).json({"success": false, "error": err})
+    }
 
 }
 
 
-async function getBalance(req, res, next){
-    const id = req.params.balanceId
+async function createBalance(req, res, next) {
+    const initialBalance = req.body.initial_balance || 0;
 
-    const connection = await createMySqlConnection()
+    const connection = await createMySqlConnection();
 
-    let [rows, fields] =  await connection.execute('SELECT * FROM balances WHERE id = ? LOCK IN SHARE MODE',[id])
+    const [result] = await connection.execute('INSERT INTO balances (balance) VALUES (?)', [initialBalance]);
 
-    await connection.commit()
-
-    console.warn(rows, fields)
-    return res.status(200).json(rows[0])
-
+    return res.status(200).json({"success": true, "id": result.insertId})
 }
 
-async function listTransactions(req, res, next){
-    const account_nr = req.params.balanceId
+async function getBalance(req, res, next) {
+    const accountNumber = req.params.accountNumber;
 
-    const connection = await createMySqlConnection()
+    if (!accountNumber) {
+        return res.json(400).json({"error": "accountNumber is mandatory"})
+    }
 
-    let [rows, fields] =  await connection.query('SELECT * FROM transactions WHERE account_nr = ?', [account_nr])
+    try {
+        const connection = await createMySqlConnection();
+        let [[row]] = await connection.execute('SELECT * FROM balances WHERE account_nr = ? LOCK IN SHARE MODE', [accountNumber]);
+        return res.status(200).json(row)
+    } catch (err) {
+        return res.status(500)
+    }
+}
+
+
+async function listBalances(req, res, next) {
+
+    const connection = await createMySqlConnection();
+
+    let [rows] = await connection.execute('SELECT * FROM balances', []);
+
+    return res.status(200).json(rows)
+}
+
+async function listTransactions(req, res, next) {
+    const accountNumber = req.query.account_number;
+
+    if (!accountNumber) {
+        return res.status(400).json({"error": "account_number is mandatory"})
+    }
+
+    const connection = await createMySqlConnection();
+
+    let [rows] = await connection.execute('SELECT * FROM transactions WHERE account_nr = ?', [accountNumber]);
 
     return res.status(200).json(rows)
 }
 
 
-async function createTransaction(req, res, next){
-    const account_nr = req.params.balanceId
-    const amount = req.body.amount
+async function getTransaction(req, res, next) {
+    const reference = req.params.reference;
+    const connection = await createMySqlConnection();
 
-    const connection = await createMySqlConnection()
+    let result = await connection.execute('SELECT * FROM transactions WHERE id = ?', [reference]);
 
-
-    await connection.beginTransaction()
-
-    let [rows, fields] =  await connection.query('Select balance FROM balances WHERE account_nr = ? FOR UPDATE', [ account_nr])
-    let [rows2, fields2] =  await connection.query('UPDATE balances SET balance = balance + ?  WHERE account_nr = ?', [amount, account_nr])
-    let [rows3, fields3]  =  await connection.query('INSERT INTO transactions (amount, account_nr) VALUES ( ?, ?)', [amount, account_nr])
-
-    await connection.commit()
-
-    return res.status(200).json(rows2)
-}
-async function getTransaction(req, res, next){
-    const id = req.params.transactionId
-    const connection = await createMySqlConnection()
-
-    let result =  await connection.query('SELECT * FROM transactions WHERE id = ?',[id])
-
-
-    console.warn(id, result)
-    return res.status(200).json({ "id": result})
+    return res.status(200).json({"id": result})
 }
 
 
-
-
-
-
-
-
-
-
-export { createBalance, listTransactions, createTransaction, getTransaction, getBalance }
+module.exports = {createBalance, listTransactions, createTransaction, getTransaction, getBalance, listBalances};

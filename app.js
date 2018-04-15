@@ -1,56 +1,48 @@
-import createError from 'http-errors';
-import express from 'express';
-import logger from 'morgan';
+require('dotenv').config();
 
+let createError = require('http-errors');
+let express = require('express');
+let logger = require('morgan');
 
-import router from './src/router';
-import { createMySqlPool } from './src/mysql'
+let {router} = require('./src/router');
+let {createMySqlConnection} = require('./src/helpers');
+
 
 let app = express();
 
 app.use(logger('dev'));
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({extended: false}));
 
 app.use('/', router);
 
 // catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  next(createError(404));
+app.use(function (req, res, next) {
+    next(createError(404));
 });
 
 // error handler
-app.use(function(err, req, res, next) {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
+app.use(function (err, req, res, next) {
+    // set locals, only providing error in development
+    res.locals.message = err.message;
+    res.locals.error = req.app.get('env') === 'development' ? err : {};
 
-  // render the error page
-  res.status(err.status || 500);
-  res.render('error');
+    // render the error page
+    res.status(err.status || 500);
+    res.render('error');
 });
 
-
-
-
-async function init_sql(){
-
-    const pool = await createMySqlPool()
-
-    await pool.query("CREATE TABLE IF NOT EXISTS  balances (id int NOT NULL AUTO_INCREMENT, account_nr CHAR(36) NOT NULL UNIQUE DEFAULT UUID(), balance int  unsigned NOT NULL DEFAULT 0, PRIMARY KEY(id));")
-    console.log("1st Table created:");
-    await pool.query("CREATE TABLE IF NOT EXISTS  transactions (reference int NOT NULL AUTO_INCREMENT , amount int NOT NULL , account_nr  CHAR(36) NOT NULL , PRIMARY KEY(reference) , FOREIGN KEY (account_nr) REFERENCES balances(account_nr));")
-    console.log("2nd Table created");
-
-    return true
-
+async function init_sql() {
+    const connection = await createMySqlConnection();
+    await connection.execute("CREATE TABLE IF NOT EXISTS  balances ( account_nr int NOT NULL AUTO_INCREMENT, balance int  unsigned NOT NULL DEFAULT 0, PRIMARY KEY(account_nr));");
+    await connection.execute("CREATE TABLE IF NOT EXISTS  transactions (reference int NOT NULL AUTO_INCREMENT , amount int NOT NULL , account_nr int NOT NULL , PRIMARY KEY(reference) , FOREIGN KEY (account_nr) REFERENCES balances(account_nr));")
 }
 
 
-init_sql()
+init_sql().then().catch((e) => { console.warn(e)});
 
 
-app.listen(3000, () => console.log('run server on 3000!'))
+app.listen(process.env.PORT, () => console.log(`run server on ${process.env.PORT}!`));
 
 
-export {app};
+module.exports = {app};
