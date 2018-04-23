@@ -27,7 +27,7 @@ npm start
 
 
 #### Test
-Create a database for test and put its name in the env variable `DATABASE_TEST_NAME` and run:
+Create a database for test and put its name in `test/config.js` along with db server config  and run:
 ```
 npm test
 ```
