@@ -39,30 +39,20 @@ describe('API calls', function () {
             b2.body.should.have.property('id');
 
 
-            const playerA = b1.body.id;
-            const playerB = b2.body.id;
+            const accountA = b1.body.id;
+            const accountB = b2.body.id;
 
             let res = await chai.request(app)
                 .post('/transactions/')
                 .send({
                     "amount": "200",
-                    "to": playerA,
-                    "from": playerB,
+                    "to": accountA,
+                    "from": accountB,
                 });
 
             res.should.have.status(200);
             res.body.should.be.a('object');
             res.body.should.have.property('success');
-
-            // let res_double = await chai.request(app)
-            //     .post('/transactions/')
-            //     .send({
-            //         "amount":"200",
-            //         "to": playerA,
-            //         "from": playerB,
-            //     })
-            //
-            // res_double.should.have.status(403);
 
         });
     });
