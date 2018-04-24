@@ -1,7 +1,6 @@
 const mysql2 = require('mysql2/promise');
 
 async function createMySqlConnection() {
-    while(true){
         try {
             return await mysql2.createConnection({
                 host: process.env.DATABASE_HOST,
@@ -12,9 +11,7 @@ async function createMySqlConnection() {
 
         } catch (e) {
             console.warn(e)
-
         }
-    }
 }
 
 module.exports = {createMySqlConnection};
